@@ -1401,13 +1401,19 @@ export const releaseReact = (command: cli.IReleaseReactCommand): Promise<void> =
 
         // Always delete the temp output folder if preserveTempDir is not true
         if (!command.preserveTempDir) {
+          log(chalk.cyan("preserveTempDir is false. Deleting temporary folder..."));
           deleteFolder(outputFolder);
+        } else {
+          log(chalk.cyan("preserveTempDir is true. Temporary folder will not be deleted."));
         }
       })
       .catch((err: Error) => {
         // Always delete the temp output folder if preserveTempDir is not true, even on error
         if (!command.preserveTempDir) {
+          log(chalk.cyan("preserveTempDir is false. Deleting temporary folder due to error..."));
           deleteFolder(outputFolder);
+        } else {
+          log(chalk.cyan("preserveTempDir is true. Temporary folder will not be deleted despite error."));
         }
         throw err;
       })
