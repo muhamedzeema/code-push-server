@@ -38,17 +38,8 @@ import {
   Session,
   UpdateMetrics,
 } from "../script/types";
-import {
-  getAndroidHermesEnabled,
-  getiOSHermesEnabled,
-  runHermesEmitBinaryCommand,
-  isValidVersion
-} from "./react-native-utils";
-import {
-  fileDoesNotExistOrIsDirectory,
-  isBinaryOrZip,
-  fileExists
-} from "./utils/file-utils";
+import { getAndroidHermesEnabled, getiOSHermesEnabled, runHermesEmitBinaryCommand, isValidVersion } from "./react-native-utils";
+import { fileDoesNotExistOrIsDirectory, isBinaryOrZip, fileExists } from "./utils/file-utils";
 
 const configFilePath: string = path.join(process.env.LOCALAPPDATA || process.env.HOME, ".code-push.config");
 const emailValidator = require("email-validator");
@@ -275,6 +266,24 @@ function deleteConnectionInfoCache(printMessage: boolean = true): void {
       log(`Successfully logged-out. The session file located at ${chalk.cyan(configFilePath)} has been deleted.\r\n`);
     }
   } catch (ex) {}
+}
+
+function copyFolderRecursiveSync(sourceDir: string, targetDir: string): void {
+  // Ensure target directory exists for the current level of recursion
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+
+  fs.readdirSync(sourceDir).forEach((item) => {
+    const sourceItemPath = path.join(sourceDir, item);
+    const targetItemPath = path.join(targetDir, item);
+
+    if (fs.lstatSync(sourceItemPath).isDirectory()) {
+      copyFolderRecursiveSync(sourceItemPath, targetItemPath); // Recurse for directories
+    } else {
+      fs.copyFileSync(sourceItemPath, targetItemPath); // Copy files
+    }
+  });
 }
 
 function deleteFolder(folderPath: string): Promise<void> {
@@ -1081,11 +1090,7 @@ function getAppVersionFromXcodeProject(command: cli.IReleaseReactCommand, projec
   }
 
   const xcodeProj = xcode.project(resolvedPbxprojFile).parseSync();
-  const marketingVersion = xcodeProj.getBuildProperty(
-    "MARKETING_VERSION",
-    command.buildConfigurationName,
-    command.xcodeTargetName
-  );
+  const marketingVersion = xcodeProj.getBuildProperty("MARKETING_VERSION", command.buildConfigurationName, command.xcodeTargetName);
   if (!isValidVersion(marketingVersion)) {
     throw new Error(
       `The "MARKETING_VERSION" key in the "${resolvedPbxprojFile}" file needs to specify a valid semver string, containing both a major and minor version (e.g. 1.3.2, 1.1).`
@@ -1353,9 +1358,9 @@ export const releaseReact = (command: cli.IReleaseReactCommand): Promise<void> =
       )
       .then(async () => {
         const isHermesEnabled =
-        command.useHermes ||
-        (platform === "android" && (await getAndroidHermesEnabled(command.gradleFile))) || // Check if we have to run hermes to compile JS to Byte Code if Hermes is enabled in build.gradle and we're releasing an Android build
-        (platform === "ios" && (await getiOSHermesEnabled(command.podFile))); // Check if we have to run hermes to compile JS to Byte Code if Hermes is enabled in Podfile and we're releasing an iOS build
+          command.useHermes ||
+          (platform === "android" && (await getAndroidHermesEnabled(command.gradleFile))) || // Check if we have to run hermes to compile JS to Byte Code if Hermes is enabled in build.gradle and we're releasing an Android build
+          (platform === "ios" && (await getiOSHermesEnabled(command.podFile))); // Check if we have to run hermes to compile JS to Byte Code if Hermes is enabled in Podfile and we're releasing an iOS build
 
         if (isHermesEnabled) {
           log(chalk.cyan("\nRunning hermes compiler...\n"));
@@ -1381,12 +1386,29 @@ export const releaseReact = (command: cli.IReleaseReactCommand): Promise<void> =
         return release(releaseCommand);
       })
       .then(() => {
-        if (!command.outputDir) {
+        const appRootPath = process.cwd(); // Get the application root path
+        const codepushBundlesDir = path.join(appRootPath, "codepush_bundles");
+
+        // Create codepush_bundles directory if it doesn't exist
+        if (!fs.existsSync(codepushBundlesDir)) {
+          fs.mkdirSync(codepushBundlesDir, { recursive: true });
+        }
+
+        // Copy contents from outputFolder to codepush_bundles
+        log(chalk.cyan(`\nCopying bundle from ${outputFolder} to ${codepushBundlesDir}\n`));
+        copyFolderRecursiveSync(outputFolder, codepushBundlesDir);
+        log(chalk.cyan("Bundle copied successfully.\n"));
+
+        // Always delete the temp output folder if preserveTempDir is not true
+        if (!command.preserveTempDir) {
           deleteFolder(outputFolder);
         }
       })
       .catch((err: Error) => {
-        deleteFolder(outputFolder);
+        // Always delete the temp output folder if preserveTempDir is not true, even on error
+        if (!command.preserveTempDir) {
+          deleteFolder(outputFolder);
+        }
         throw err;
       })
   );

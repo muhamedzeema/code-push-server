@@ -205,6 +205,7 @@ export interface IReleaseReactCommand extends IReleaseBaseCommand {
   xcodeProjectFile?: string;
   xcodeTargetName?: string;
   buildConfigurationName?: string;
+  preserveTempDir?: boolean;
 }
 
 export interface IRollbackCommand extends ICommand {
